@@ -138,7 +138,7 @@ genres_seperated<-edx %>% separate_rows(genres, sep = "\\|") %>%
 	group_by(genres) %>%
 	summarize(count = n()) %>%
 	arrange(desc(count))
- as.data.frame(genres_seperated)%>% slice(1:19) %>% mutate(genres = reorder(genres,count)) %>% ggplot(aes(x=genres, y=count)) + geom_point(size=2.7, color="cadetblue") +theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_y_discrete(labels = scales::comma) + geom_text(aes(x=1.1, y=150000, label ="lowest"), color="blue") + geom_text(aes(x=18.8, y=3840000, label ="highest"), color="purple") + theme(panel.background = element_rect(fill = "snow"), panel.border = element_rect(fill = NA, color = "grey75"))
+ as.data.frame(genres_seperated)%>% slice(1:19) %>% mutate(genres = reorder(genres,count)) %>% ggplot(aes(x=genres, y=count)) + geom_point(size=2.7, color="cadetblue") +theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_y_discrete(labels = scales::comma) + geom_text(aes(x=1.1, y=150000, label ="lowest"), color="blue") + geom_text(aes(x=18.8, y=380000, label ="highest"), color="purple") + theme(panel.background = element_rect(fill = "snow"), panel.border = element_rect(fill = NA, color = "grey75"))
 
 ```
 
@@ -160,7 +160,7 @@ edx %>% group_by(movieId) %>%
 edx %>%  group_by(rating) %>% 
   summarize(n = n()) %>%  
   top_n(5, n) %>%
-  arrange(desc(n))%>% data.frame(.)%>%ggplot(aes(x=rating, y=n)) + geom_point(color="peru", size=3) + geom_line(color="black", size=1) +xlab("Movies Ratings") +ylab("Total Number of Ratings") +theme(panel.background = element_rect(fill = "snow")) +ggtitle("Total Number of Ratings for the five most given ratings")
+  arrange(desc(n))%>% data.frame(.)%>%ggplot(aes(x=rating, y=n)) + geom_point(color="peru", size=3) +xlab("Movies Ratings") +ylab("Total Number of Ratings") +theme(panel.background = element_rect(fill = "snow")) +ggtitle("Total Number of Ratings for the five most given ratings")
 ```
 
 \pagebreak
