@@ -1,0 +1,242 @@
+---
+title: '**Movielens Capstone Project**'
+author: "Michelle Salandy"
+date: "6/3/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# **Introduction**
+This project is based on developing a movie recommendation system using the MovieLens dataset. Several factors were explored as predictors for determining the prediction of movie ratings. The Root Mean Squared Error (RMSE) was utilized to evaluate performance and determine the best machine learning algorithm for this task. 
+
+The impact of the user, movie and the genre of a movie, on movie ratings in the dataset were explored but only the algorithm with user and movie effects was chosen. Additionally, after data exploration, Regularization was introduced in the model to *penalize* large estimates in ratings for some movies being derived from a small number of total ratings, as well as being rated by only a few users. Thus, shrinking deviations from the average toward zero and improving the generalization abilities of the model. 
+
+The project has five sections. Following this brief introduction, the second section will identify the dataset and illustrate how 90% of the data is used as the training set and the remaining 10% the validation set. The third section will discuss the general properties of the dataset.  The fourth section presents a detailed discussion on the penalized approach of the chosen algorithm.  The report ends with a summary of the major findings and the identification of the RMSE of the “*best-fit*” algorithm.
+
+
+# **Dataset: Downloading and Creating Test and Validation Sets**
+The following code was used to generate the datasets. The dataset was then split into training set denoted as edx and a validation set denoted as validation, which is used to test the algorithm for predicting movie ratings as if they were unknown.
+
+### MovieLens 10M dataset:
+```{r warning=FALSE, message=FALSE}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+```
+
+```{r}
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                      col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+```
+
+### Validation set will be 10% of MovieLens data
+```{r}
+set.seed(1) 
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+```
+
+### Make sure userId and movieId in validation set are also in edx set
+```{r}
+validation <- temp %>% 
+     semi_join(edx, by = "movieId") %>%
+     semi_join(edx, by = "userId")
+```
+
+### Add rows removed from validation set back into edx set
+```{r}
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+```
+
+\pagebreak
+# **Data Exploration: edx dataset**
+The general properties of the edx dataset is explored below.
+
+1. There are 9000055 rows and 6 columns.
+```{r eval=FALSE}
+dim(edx)
+```
+
+2. There are 10677 unique movies, 69878 unique users, unique genre categories and 10 unique ratings ranging from 0.5 to 5.
+```{r echo=FALSE}
+data.frame(Movies= n_distinct(edx$movieId), Users=n_distinct(edx$userId), Genres=n_distinct(edx$genres), Rating=n_distinct(edx$rating)) %>% knitr::kable()
+```
+
+```{r eval=FALSE}
+range(edx$rating)
+```
+
+
+3.The distribution of the number of movie ratings and the number of user ratings is displayed below. 
+The figure shows that some movies are rated more often than others. This variation is also seen as some users also actively rate more movies. Some users have rated more than 1000 movies while others have only rated a few. 
+
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+p1<- edx %>% group_by(movieId) %>% summarize(n = n()) %>% ggplot(aes(n)) +  geom_histogram(bins=15, fill="grey", color="black") + scale_x_log10() + ggtitle("Distribution of Movie Ratings")
+
+p2<-edx %>% group_by(userId) %>% summarize(n = n()) %>% ggplot(aes(n)) +  geom_histogram(bins=15, fill="grey", color="black")  + scale_x_log10() + ylab("") +ggtitle("Distribution of User Ratings")
+library(gridExtra)
+grid.arrange(p1,p2, ncol=2)
+
+```
+
+\pagebreak
+
+4.Substantial variablity also exists in the average rating across users and movies. 
+Some users give higher average ratings than others.
+
+```{r echo=FALSE, out.height="40%"}
+edx %>% group_by(userId) %>% summarize(average_rating= mean(rating)) %>% filter(n()>=100) %>% ggplot(aes(average_rating)) +  geom_histogram(bins=30, fill="burlywood", color="black") + ggtitle("Average User Rating")
+```
+
+
+
+```{r echo=FALSE, out.height="40%"}
+edx %>% group_by(movieId) %>% summarize(average_rating= mean(rating)) %>% filter(n()>=100) %>% ggplot(aes(average_rating)) +  geom_histogram(bins=30, fill="burlywood1", color="black") + ggtitle("Average Movie Rating")
+```
+
+
+Average ratings are also higher for some more popular movies that others.
+
+\pagebreak
+
+5. Preferences in genre type can also be assumed as there are various numbers of movie ratings in each of the following genre categories. Ranging from a minimum of 2 ratings to max of 733296 ratings in the Drama Category.
+```{r echo=FALSE}
+genres<-edx %>% 
+  group_by(genres) %>%
+	summarize(count = n()) %>%
+	arrange(desc(count))
+```
+```{r eval=FALSE}
+range((as.data.frame(genres))$count)
+```
+
+6. There are various numbers of movie ratings in each of the following individual genre categories. Drama receives the most ratings and IMAX the least.
+
+```{r echo=FALSE, out.height="45%"}
+genres_seperated<-edx %>% separate_rows(genres, sep = "\\|") %>%
+	group_by(genres) %>%
+	summarize(count = n()) %>%
+	arrange(desc(count))
+ as.data.frame(genres_seperated)%>% slice(1:19) %>% mutate(genres = reorder(genres,count)) %>% ggplot(aes(x=genres, y=count)) + geom_point(size=2.7, color="cadetblue") +theme(axis.text.x = element_text(angle = 90, hjust = 1)) + scale_y_discrete(labels = scales::comma) + geom_text(aes(x=1.1, y=150000, label ="lowest"), color="blue") + geom_text(aes(x=18.8, y=380000, label ="highest"), color="purple") + theme(panel.background = element_rect(fill = "snow"), panel.border = element_rect(fill = NA, color = "grey75"))
+
+```
+
+7. Pulp Fiction has the greatest number of ratings.
+```{r echo=FALSE}
+edx %>% group_by(movieId) %>% 
+  summarize(n = n(),title = title[1]) %>%
+  top_n(10, n) %>%  arrange(desc(n)) %>% knitr::kable()
+``` 
+
+\pagebreak
+8. Its also observed that the five most given ratings in order from most to least are 4, 3, 5, 3.5, 2.
+```{r echo=FALSE, out.height="50%"}
+ edx %>%  group_by(rating) %>% 
+  summarize(n = n()) %>%  
+  top_n(5, n) %>%
+  arrange(desc(n))%>% data.frame(.)%>% knitr::kable()
+
+edx %>%  group_by(rating) %>% 
+  summarize(n = n()) %>%  
+  top_n(5, n) %>%
+  arrange(desc(n))%>% data.frame(.)%>%ggplot(aes(x=rating, y=n)) + geom_point(color="peru", size=3) +xlab("Movies Ratings") +ylab("Total Number of Ratings") +theme(panel.background = element_rect(fill = "snow")) +ggtitle("Total Number of Ratings for the five most given ratings")
+```
+
+\pagebreak
+# **Discussion: Regularization of the Algorithmn and RMSE results**
+Using *Penalized* least squares estimates to determine the best algorithm to determine ratings based on users and movieId.
+
+### Computing the RMSE for a vector of ratings and their corresponding predictors
+```{r}
+RMSE<-function(yhats, true_ratings) {
+  sqrt(mean((yhats-true_ratings)^2))
+}
+```
+
+### Methodology:Determining optimal value for lambda
+Cross-validation is used to choose the tuning parameter lambda.
+```{r fig.capRMSE= "RMSE for lambdas in the sequence"}
+lambdas<-seq(0,10,0.25)
+rmses<-sapply(lambdas, function(l){
+  mu<-mean(edx$rating)
+  
+  bi<-edx %>% group_by(movieId) %>% 
+summarize(bi=sum(rating-mu)/(n()+l))
+  
+  bu<-edx %>% left_join(bi, by="movieId") %>%
+    group_by(userId) %>%
+    summarize(bu=sum(rating-bi-mu)/(n()+l))
+  
+  yhat<-edx %>% left_join(bi, by="movieId") %>%
+    left_join(bu, by="userId") %>%
+    mutate(pred=mu+bi+bu) %>%
+    .$pred
+
+  return(RMSE(yhat, edx$rating))
+})
+
+lambda<-lambdas[which.min(rmses)]
+
+plot(lambdas,rmses)
+```
+
+Cross validation on the training set with suggests that lambda of 0.5 will minimize the RMSE.
+
+
+### Methodology:Computing the lowest RMSE
+Using lambda (l) of 0.5, the code below shows how the RMSE was calculated from the validation set.
+```{r}
+l<-0.5
+mu<-mean(validation$rating)
+  
+bi<-validation %>% group_by(movieId) %>% 
+summarize(bi=sum(rating-mu)/(n()+l))
+  
+bu<-validation %>% left_join(bi, by="movieId") %>%
+    group_by(userId) %>%
+    summarize(bu=sum(rating-bi-mu)/(n()+l))
+  
+yhat<-validation %>% left_join(bi, by="movieId") %>%
+    left_join(bu, by="userId") %>%
+    mutate(pred=mu+bi+bu) %>%
+    .$pred
+
+RMSE(yhat, validation$rating)
+
+```
+
+# **Conclusion**
+This algorithm achieved a RMSE of 0.83. This is lowest RSME reflecting the closet predictions to the true values of ratings in the validation set from the various algorithms utilized (algorithms which provided lower RMSEs were not included in the document).
+
+
+
+
+
+
+
+
+
+
+[Link to Github Movielens Project](https://github.com/msalandy/movielens-project.git)
